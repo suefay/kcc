@@ -462,6 +462,13 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 	return uint(num), err
 }
 
+// PendingTransactions returns the pending transactions in the tx pool.
+func (ec *Client) PendingTransactions(ctx context.Context) (types.Transactions, error) {
+	var txs types.Transactions
+	err := ec.c.CallContext(ctx, &txs, "eth_getPoolTransactions")
+	return txs, err
+}
+
 // SubscribePendingTransactions subscribes to new pending transactions.
 func (ec *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- common.Hash) (ethereum.Subscription, error) {
 	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactions")
