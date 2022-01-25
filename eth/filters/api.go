@@ -191,10 +191,13 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context) (*rpc.
 		for {
 			select {
 			case hashes := <-txHashes:
-				// To keep the original behaviour, send a single tx hash in one notification.
-				// TODO(rjl493456442) Send a batch of tx hashes in one notification
+				// To keep the original behaviour, send a single tx in one notification.
+				// TODO(rjl493456442) Send a batch of txs in one notification
 				for _, h := range hashes {
-					notifier.Notify(rpcSub.ID, api.backend.GetPoolTransaction(h))
+					tx := api.backend.GetPoolTransaction(h)
+					if tx != nil {
+						notifier.Notify(rpcSub.ID, tx)
+					}
 				}
 			case <-rpcSub.Err():
 				pendingTxSub.Unsubscribe()
