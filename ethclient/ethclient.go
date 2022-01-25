@@ -463,9 +463,18 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 }
 
 // PendingTransactions returns the pending transactions in the tx pool.
-func (ec *Client) PendingTransactions(ctx context.Context) (types.Transactions, error) {
-	var txs types.Transactions
-	err := ec.c.CallContext(ctx, &txs, "eth_getPoolTransactions")
+func (ec *Client) AllPendingTransactions(ctx context.Context) ([]*types.Transaction, error) {
+	var rpcTxs []*rpcTransaction
+	err := ec.c.CallContext(ctx, &rpcTxs, "eth_allPendingTransactions")
+	if err != nil {
+		return nil, err
+	}
+
+	txs := make([]*types.Transaction, 0, len(rpcTxs))
+	for _, tx := range rpcTxs {
+		txs = append(txs, tx.tx)
+	}
+
 	return txs, err
 }
 
