@@ -44,6 +44,9 @@ const (
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of tx pool.
 	txChanSize = 4096
+
+	// blockDelayThreshold is the block number limit by which the peer is allowed to delay at most
+	blockDelayThreshold = 50
 )
 
 var (
@@ -259,6 +262,16 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
 		return err
 	}
+
+	// Disconnect the peer if its block number is behind the current block number by the threshold
+	peerHeadHash, _ := peer.Head()
+	peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
+	if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
+		peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
+		peer.Close()
+		return p2p.DiscUselessPeer
+	}
+
 	reject := false // reserved peer slots
 	if atomic.LoadUint32(&h.snapSync) == 1 {
 		if snap == nil {
