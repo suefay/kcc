@@ -268,7 +268,6 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
 	if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
 		peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
-		peer.Close()
 		return p2p.DiscUselessPeer
 	}
 
