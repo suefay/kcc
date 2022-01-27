@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -484,8 +485,9 @@ func (ec *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- co
 }
 
 // SubscribePendingTransactions extends SubscribePendingTransactions to return the transaction itself instead of the hash
-func (ec *Client) SubscribePendingTransactionsEx(ctx context.Context, ch chan<- *types.Transaction) (*rpc.ClientSubscription, error) {
-	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx")
+// and add the filter criteria.
+func (ec *Client) SubscribePendingTransactionsEx(ctx context.Context, ch chan<- *types.Transaction, crit filters.PendingTransactionsFilterCriteria) (*rpc.ClientSubscription, error) {
+	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx", crit)
 }
 
 // Contract Calling

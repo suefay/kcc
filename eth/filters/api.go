@@ -17,6 +17,7 @@
 package filters
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -176,7 +177,8 @@ func (api *PublicFilterAPI) NewPendingTransactions(ctx context.Context) (*rpc.Su
 }
 
 // NewPendingTransactionsEx extends NewPendingTransactions to notify the transaction itself instead of the transaction hash
-func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context) (*rpc.Subscription, error) {
+// and add the filter criteria.
+func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit PendingTransactionsFilterCriteria) (*rpc.Subscription, error) {
 	notifier, supported := rpc.NotifierFromContext(ctx)
 	if !supported {
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
@@ -195,7 +197,7 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context) (*rpc.
 				// TODO(rjl493456442) Send a batch of txs in one notification
 				for _, h := range hashes {
 					tx := api.backend.GetPoolTransaction(h)
-					if tx != nil {
+					if tx != nil && crit.Match(tx) {
 						notifier.Notify(rpcSub.ID, tx)
 					}
 				}
@@ -318,6 +320,27 @@ func (api *PublicFilterAPI) Logs(ctx context.Context, crit FilterCriteria) (*rpc
 // FilterCriteria represents a request to create a new filter.
 // Same as ethereum.FilterQuery but with UnmarshalJSON() method.
 type FilterCriteria ethereum.FilterQuery
+
+// PendingTransactionsFilterCriteria represents a request to create a new pending transaction filter
+type PendingTransactionsFilterCriteria struct {
+	To         common.Address // the recipient address to filter
+	DataPrefix []byte         // the prefix of the data to filter
+}
+
+// Match checks if the given transaction satisfies the filter criteria
+func (crit *PendingTransactionsFilterCriteria) Match(tx *types.Transaction) bool {
+	if crit.To != (common.Address{}) {
+		if tx.To() != &crit.To {
+			return false
+		}
+	}
+
+	if crit.DataPrefix != nil {
+		return bytes.HasPrefix(tx.Data(), crit.DataPrefix)
+	}
+
+	return true
+}
 
 // NewFilter creates a new filter and returns the filter id. It can be
 // used to retrieve logs when the state changes. This method cannot be
