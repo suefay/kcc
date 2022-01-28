@@ -19,7 +19,6 @@ package ethapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -37,7 +36,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -892,7 +890,7 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 }
 
 // DoCallEx extends DoCall to retrieve the evm debug trace and logs
-func DoCallEx(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides map[common.Address]account, vmCfg vm.Config, timeout time.Duration, globalGasCap uint64, debug bool, needLogs bool) (*core.ExecutionResult, []byte, []byte, error) {
+func DoCallEx(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides map[common.Address]account, vmCfg vm.Config, timeout time.Duration, globalGasCap uint64, debug bool, needLogs bool) (*core.ExecutionResult, []vm.StructLog, []*types.Log, error) {
 	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
 
 	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
@@ -974,56 +972,20 @@ func DoCallEx(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.B
 		return result, nil, nil, fmt.Errorf("err: %w (supplied gas %d)", err, msg.Gas())
 	}
 
-	var trace []byte
-	var logs []byte
+	var trace []vm.StructLog
+	var logs []*types.Log
 
 	// Get the evm debug trace
 	if debug {
-		trace, err = getDebugTrace(debugLogger)
-		if err != nil {
-			return nil, nil, nil, err
-		}
+		trace = debugLogger.StructLogs()
 	}
 
 	// Get evm call logs
 	if needLogs {
-		logs, err = getLogs(state)
-		if err != nil {
-			return nil, nil, nil, err
-		}
+		logs = state.Logs()
 	}
 
 	return result, trace, logs, nil
-}
-
-// getDebugTrace gets the evm debug trace
-func getDebugTrace(debugLogger *vm.StructLogger) (trace []byte, err error) {
-	logs := debugLogger.StructLogs()
-	for _, log := range logs {
-		encodedLog, err := json.Marshal(log)
-		if err != nil {
-			return nil, err
-		}
-
-		trace = append(trace, encodedLog...)
-	}
-
-	return
-}
-
-// getLogs gets the evm call logs from state db
-func getLogs(state *state.StateDB) (logs []byte, err error) {
-	stateLogs := state.Logs()
-	for _, log := range stateLogs {
-		encodedLog, err := json.Marshal(log)
-		if err != nil {
-			return nil, err
-		}
-
-		logs = append(logs, encodedLog...)
-	}
-
-	return
 }
 
 func newRevertError(result *core.ExecutionResult) *revertError {
@@ -1079,7 +1041,7 @@ func (s *PublicBlockChainAPI) Call(ctx context.Context, args CallArgs, blockNrOr
 }
 
 // CallEx extends Call to retrieve the evm debug trace and logs
-func (s *PublicBlockChainAPI) CallEx(ctx context.Context, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *map[common.Address]account, debug bool, needLogs bool) (hexutil.Bytes, error) {
+func (s *PublicBlockChainAPI) CallEx(ctx context.Context, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *map[common.Address]account, debug bool, needLogs bool) (*ExecutionResultEx, error) {
 	var accounts map[common.Address]account
 	if overrides != nil {
 		accounts = *overrides
@@ -1094,7 +1056,7 @@ func (s *PublicBlockChainAPI) CallEx(ctx context.Context, args CallArgs, blockNr
 	}
 
 	if result.Err != nil {
-		return result.Return(), result.Err
+		return nil, result.Err
 	}
 
 	// Build ExecutionResultEx
@@ -1105,7 +1067,7 @@ func (s *PublicBlockChainAPI) CallEx(ctx context.Context, args CallArgs, blockNr
 		Logs:       logs,
 	}
 
-	return json.Marshal(resultEx)
+	return &resultEx, nil
 }
 
 func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, gasCap uint64) (hexutil.Uint64, error) {
@@ -1235,6 +1197,14 @@ type ExecutionResult struct {
 	Failed      bool           `json:"failed"`
 	ReturnValue string         `json:"returnValue"`
 	StructLogs  []StructLogRes `json:"structLogs"`
+}
+
+// ExecutionResultEx is a struct which extends core.ExecutionResult with debug trace and logs, and removes the Err field
+type ExecutionResultEx struct {
+	GasUsed    uint64         `json:"gasUsed"`
+	ReturnData []byte         `json:"returnData"`
+	DebugTrace []vm.StructLog `json:"debugTrace"`
+	Logs       []*types.Log   `json:"logs"`
 }
 
 // StructLogRes stores a structured log emitted by the EVM while replaying a
@@ -2179,12 +2149,4 @@ func toHexSlice(b [][]byte) []string {
 		r[i] = hexutil.Encode(b[i])
 	}
 	return r
-}
-
-// ExecutionResultEx is a struct which extends ExecutionResult with debug trace and logs, and removes the Err field
-type ExecutionResultEx struct {
-	GasUsed    uint64 `json:"gasUsed"`
-	ReturnData []byte `json:"returnData"`
-	DebugTrace []byte `json:"debugTrace"`
-	Logs       []byte `json:"logs"`
 }
