@@ -323,8 +323,8 @@ type FilterCriteria ethereum.FilterQuery
 
 // PendingTransactionsFilterCriteria represents a request to create a new pending transaction filter
 type PendingTransactionsFilterCriteria struct {
-	To         common.Address // the recipient address to filter
-	DataPrefix []byte         // the prefix of the data to filter
+	To         common.Address `json:"to"`         // the recipient address to filter
+	DataPrefix []byte         `json:"dataPrefix"` // the prefix of the data to filter
 }
 
 // Match checks if the given transaction satisfies the filter criteria
