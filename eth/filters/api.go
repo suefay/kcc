@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -187,17 +188,14 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit P
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		txHashes := make(chan []common.Hash, 128)
-		pendingTxSub := api.events.SubscribePendingTxs(txHashes)
+		txsCh := make(chan core.NewTxsEvent, 128)
+		pendingTxSub := api.backend.SubscribeNewTxsEvent(txsCh)
 
 		for {
 			select {
-			case hashes := <-txHashes:
-				// To keep the original behaviour, send a single tx in one notification.
-				// TODO(rjl493456442) Send a batch of txs in one notification
-				for _, h := range hashes {
-					tx := api.backend.GetPoolTransaction(h)
-					if tx != nil && crit.Match(tx) {
+			case ev := <-txsCh:
+				for _, tx := range ev.Txs {
+					if crit.Match(tx) {
 						notifier.Notify(rpcSub.ID, tx)
 					}
 				}
