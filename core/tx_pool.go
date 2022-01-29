@@ -775,7 +775,6 @@ func (pool *TxPool) AddLocal(tx *types.Transaction) error {
 // This method is used to add transactions from the p2p network and does not wait for pool
 // reorganization and internal event propagation.
 func (pool *TxPool) AddRemotes(txs []*types.Transaction) []error {
-	pool.txFeed.Send(NewTxsEvent{txs})
 	return pool.addTxs(txs, false, false)
 }
 
@@ -1114,7 +1113,7 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 		for _, set := range events {
 			txs = append(txs, set.Flatten()...)
 		}
-		// pool.txFeed.Send(NewTxsEvent{txs})
+		pool.txFeed.Send(NewTxsEvent{txs})
 	}
 }
 
