@@ -188,7 +188,7 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit P
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		txsCh := make(chan core.NewTxsEvent, 128)
+		txsCh := make(chan core.NewTxsEvent, 1024)
 		pendingTxSub := api.backend.SubscribeNewTxsEvent(txsCh)
 
 		for {
