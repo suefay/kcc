@@ -170,6 +170,8 @@ type TxFetcher struct {
 	requests   map[string]*txRequest               // In-flight transaction retrievals
 	alternates map[common.Hash]map[string]struct{} // In-flight transaction alternate origins if retrieval fails
 
+	timeouts map[string]uint8 // Set of timed out peers, mapping peer to the corresponding number of timeouts
+
 	// Callbacks
 	hasTx    func(common.Hash) bool             // Retrieves a tx from the local txpool
 	addTxs   func([]*types.Transaction) []error // Insert a batch of transactions into local txpool
@@ -179,8 +181,6 @@ type TxFetcher struct {
 	step  chan struct{} // Notification channel when the fetcher loop iterates
 	clock mclock.Clock  // Time wrapper to simulate in tests
 	rand  *mrand.Rand   // Randomizer to use in tests instead of map range loops (soft-random)
-
-	timeouts map[string]uint8 // Set of timed out peers, mapping peer to the corresponding number of timeouts
 }
 
 // NewTxFetcher creates a transaction fetcher to retrieve transaction
@@ -191,7 +191,7 @@ func NewTxFetcher(hasTx func(common.Hash) bool, addTxs func([]*types.Transaction
 
 // NewTxFetcherWithDropPeer is a NewTxFetcher wrapper to accept a `dropPeer` argument to drop a peer.
 func NewTxFetcherWithDropPeer(hasTx func(common.Hash) bool, addTxs func([]*types.Transaction) []error, fetchTxs func(string, []common.Hash) error, dropPeer func(string)) *TxFetcher {
-	fetcher := NewTxFetcherForTests(hasTx, addTxs, fetchTxs, mclock.System{}, nil)
+	fetcher := NewTxFetcher(hasTx, addTxs, fetchTxs)
 	fetcher.dropPeer = dropPeer
 	return fetcher
 }
@@ -214,6 +214,7 @@ func NewTxFetcherForTests(
 		fetching:    make(map[common.Hash]string),
 		requests:    make(map[string]*txRequest),
 		alternates:  make(map[common.Hash]map[string]struct{}),
+		timeouts:    make(map[string]uint8),
 		underpriced: mapset.NewSet(),
 		hasTx:       hasTx,
 		addTxs:      addTxs,
