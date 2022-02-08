@@ -328,7 +328,7 @@ type PendingTransactionsFilterCriteria struct {
 // Match checks if the given transaction satisfies the filter criteria
 func (crit *PendingTransactionsFilterCriteria) Match(tx *types.Transaction) bool {
 	if crit.To != (common.Address{}) {
-		if tx.To() != &crit.To {
+		if *tx.To() != crit.To {
 			return false
 		}
 	}
