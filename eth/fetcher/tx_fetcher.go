@@ -64,7 +64,10 @@ const (
 var (
 	// txFetchTimeout is the maximum allotted time to return an explicitly
 	// requested transaction.
-	txFetchTimeout = 5 * time.Second
+	txFetchTimeout = 2 * time.Second
+
+	// maxTxFetchTimeoutNum is the maximum allowed number of timeouts for a peer to fetch transactions.
+	maxTxFetchTimeoutNum = uint8(3)
 )
 
 var (
@@ -171,16 +174,26 @@ type TxFetcher struct {
 	hasTx    func(common.Hash) bool             // Retrieves a tx from the local txpool
 	addTxs   func([]*types.Transaction) []error // Insert a batch of transactions into local txpool
 	fetchTxs func(string, []common.Hash) error  // Retrieves a set of txs from a remote peer
+	dropPeer func(string)                       // Drop a peer for timeout
 
 	step  chan struct{} // Notification channel when the fetcher loop iterates
 	clock mclock.Clock  // Time wrapper to simulate in tests
 	rand  *mrand.Rand   // Randomizer to use in tests instead of map range loops (soft-random)
+
+	timeouts map[string]uint8 // Set of timed out peers, mapping peer to the corresponding number of timeouts
 }
 
 // NewTxFetcher creates a transaction fetcher to retrieve transaction
 // based on hash announcements.
 func NewTxFetcher(hasTx func(common.Hash) bool, addTxs func([]*types.Transaction) []error, fetchTxs func(string, []common.Hash) error) *TxFetcher {
 	return NewTxFetcherForTests(hasTx, addTxs, fetchTxs, mclock.System{}, nil)
+}
+
+// NewTxFetcherWithDropPeer is a NewTxFetcher wrapper to accept a `dropPeer` argument to drop a peer.
+func NewTxFetcherWithDropPeer(hasTx func(common.Hash) bool, addTxs func([]*types.Transaction) []error, fetchTxs func(string, []common.Hash) error, dropPeer func(string)) *TxFetcher {
+	fetcher := NewTxFetcherForTests(hasTx, addTxs, fetchTxs, mclock.System{}, nil)
+	fetcher.dropPeer = dropPeer
+	return fetcher
 }
 
 // NewTxFetcherForTests is a testing method to mock out the realtime clock with
@@ -510,6 +523,9 @@ func (f *TxFetcher) loop() {
 					}
 					// Keep track of the request as dangling, but never expire
 					f.requests[peer].hashes = nil
+
+					// Handle timeout
+					f.onTimeout(peer)
 				}
 			}
 			// Schedule a new transaction retrieval
@@ -659,6 +675,10 @@ func (f *TxFetcher) loop() {
 				}
 				delete(f.announces, drop.peer)
 			}
+
+			// Reset timeout
+			delete(f.timeouts, drop.peer)
+
 			// If a request was cancelled, check if anything needs to be rescheduled
 			if request != nil {
 				f.scheduleFetches(timeoutTimer, timeoutTrigger, nil)
@@ -856,6 +876,15 @@ func (f *TxFetcher) forEachHash(hashes map[common.Hash]struct{}, do func(hash co
 		if !do(hash) {
 			return
 		}
+	}
+}
+
+// onTimeout is called when transaction fetching from the given peer timed out.
+func (f *TxFetcher) onTimeout(peer string) {
+	f.timeouts[peer] += 1
+	if f.timeouts[peer] == maxTxFetchTimeoutNum {
+		f.dropPeer(peer) // Disconnect the peer
+		f.Drop(peer)     // Clean up
 	}
 }
 

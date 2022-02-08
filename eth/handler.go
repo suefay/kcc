@@ -227,7 +227,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		}
 		return p.RequestTxs(hashes)
 	}
-	h.txFetcher = fetcher.NewTxFetcher(h.txpool.Has, h.txpool.AddRemotes, fetchTx)
+	h.txFetcher = fetcher.NewTxFetcherWithDropPeer(h.txpool.Has, h.txpool.AddRemotes, fetchTx, h.removePeer)
 	h.chainSync = newChainSyncer(h)
 	return h, nil
 }
