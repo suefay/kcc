@@ -272,7 +272,7 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		return err
 	}
 
-	if !h.trustedNodes[peer.ID()] {
+	if !h.trustedNodes[peer.ID()] && atomic.LoadUint32(&h.acceptTxs) == 1 {
 		// Disconnect the peer if its block number is behind the current block number by the threshold
 		peerHeadHash, _ := peer.Head()
 		peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
