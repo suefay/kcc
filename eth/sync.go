@@ -343,7 +343,7 @@ func (h *handler) doSync(op *chainSyncOp) error {
 			atomic.StoreUint32(&h.acceptTxs, 1)
 
 			// Remove useless peers
-			h.removeUselessPeers()
+			// h.removeUselessPeers()
 		}
 	}
 	if head.NumberU64() > 0 {
