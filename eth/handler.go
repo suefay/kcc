@@ -80,16 +80,16 @@ type txPool interface {
 // handlerConfig is the collection of initialization parameters to create a full
 // node network handler.
 type handlerConfig struct {
-	Database     ethdb.Database            // Database for direct sync insertions
-	Chain        *core.BlockChain          // Blockchain to serve data from
-	TxPool       txPool                    // Transaction pool to propagate from
-	Network      uint64                    // Network identifier to adfvertise
-	Sync         downloader.SyncMode       // Whether to fast or full sync
-	BloomCache   uint64                    // Megabytes to alloc for fast sync bloom
-	EventMux     *event.TypeMux            // Legacy event mux, deprecate for `feed`
-	Checkpoint   *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
-	Whitelist    map[uint64]common.Hash    // Hard coded whitelist for sync challenged
-	TrustedNodes []*enode.Node             // Trusted node set
+	Database       ethdb.Database            // Database for direct sync insertions
+	Chain          *core.BlockChain          // Blockchain to serve data from
+	TxPool         txPool                    // Transaction pool to propagate from
+	Network        uint64                    // Network identifier to adfvertise
+	Sync           downloader.SyncMode       // Whether to fast or full sync
+	BloomCache     uint64                    // Megabytes to alloc for fast sync bloom
+	EventMux       *event.TypeMux            // Legacy event mux, deprecate for `feed`
+	Checkpoint     *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
+	Whitelist      map[uint64]common.Hash    // Hard coded whitelist for sync challenged
+	WhitelistNodes []*enode.Node             // Whitelisted node set
 }
 
 type handler struct {
@@ -119,8 +119,8 @@ type handler struct {
 	txsSub        event.Subscription
 	minedBlockSub *event.TypeMuxSubscription
 
-	whitelist    map[uint64]common.Hash
-	trustedNodes map[string]bool
+	whitelist      map[uint64]common.Hash
+	whitelistNodes map[string]bool
 
 	// channels for fetcher, syncer, txsyncLoop
 	txsyncCh chan *txsync
@@ -138,21 +138,21 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		config.EventMux = new(event.TypeMux) // Nicety initialization for tests
 	}
 	h := &handler{
-		networkID:    config.Network,
-		forkFilter:   forkid.NewFilter(config.Chain),
-		eventMux:     config.EventMux,
-		database:     config.Database,
-		txpool:       config.TxPool,
-		chain:        config.Chain,
-		peers:        newPeerSet(),
-		whitelist:    config.Whitelist,
-		trustedNodes: make(map[string]bool),
-		txsyncCh:     make(chan *txsync),
-		quitSync:     make(chan struct{}),
+		networkID:      config.Network,
+		forkFilter:     forkid.NewFilter(config.Chain),
+		eventMux:       config.EventMux,
+		database:       config.Database,
+		txpool:         config.TxPool,
+		chain:          config.Chain,
+		peers:          newPeerSet(),
+		whitelist:      config.Whitelist,
+		whitelistNodes: make(map[string]bool),
+		txsyncCh:       make(chan *txsync),
+		quitSync:       make(chan struct{}),
 	}
 
-	for _, n := range config.TrustedNodes {
-		h.trustedNodes[n.ID().String()] = true
+	for _, n := range config.WhitelistNodes {
+		h.whitelistNodes[n.ID().String()] = true
 	}
 
 	if config.Sync == downloader.FullSync {
@@ -272,7 +272,7 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		return err
 	}
 
-	if !h.trustedNodes[peer.ID()] && atomic.LoadUint32(&h.acceptTxs) == 1 {
+	if !h.whitelistNodes[peer.ID()] && atomic.LoadUint32(&h.acceptTxs) == 1 {
 		// Disconnect the peer if its block number is behind the current block number by the threshold
 		peerHeadHash, _ := peer.Head()
 		peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
@@ -417,7 +417,7 @@ func (h *handler) removeUselessPeers() {
 		peers := h.peers.peersWithoutBlock(destBlock.Hash())
 
 		for _, p := range peers {
-			if !h.trustedNodes[p.ID()] {
+			if !h.whitelistNodes[p.ID()] {
 				h.removePeer(p.ID())
 			}
 		}
