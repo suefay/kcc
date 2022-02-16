@@ -272,15 +272,15 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		return err
 	}
 
-	if !h.whitelistNodes[peer.ID()] && atomic.LoadUint32(&h.acceptTxs) == 1 {
-		// Disconnect the peer if its block number is behind the current block number by the threshold
-		peerHeadHash, _ := peer.Head()
-		peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
-		if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
-			peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
-			return p2p.DiscUselessPeer
-		}
-	}
+	// if !h.whitelistNodes[peer.ID()] && atomic.LoadUint32(&h.acceptTxs) == 1 {
+	// 	// Disconnect the peer if its block number is behind the current block number by the threshold
+	// 	peerHeadHash, _ := peer.Head()
+	// 	peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
+	// 	if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
+	// 		peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
+	// 		return p2p.DiscUselessPeer
+	// 	}
+	// }
 
 	reject := false // reserved peer slots
 	if atomic.LoadUint32(&h.snapSync) == 1 {
