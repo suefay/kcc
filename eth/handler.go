@@ -47,7 +47,7 @@ const (
 	txChanSize = 4096
 
 	// blockDelayThreshold is the block number limit by which the peer is allowed to delay at most
-	blockDelayThreshold = 0
+	blockDelayThreshold = 5000
 )
 
 var (
