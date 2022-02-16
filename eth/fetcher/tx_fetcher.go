@@ -170,7 +170,8 @@ type TxFetcher struct {
 	requests   map[string]*txRequest               // In-flight transaction retrievals
 	alternates map[common.Hash]map[string]struct{} // In-flight transaction alternate origins if retrieval fails
 
-	timeouts map[string]uint8 // Set of timed out peers, mapping peer to the corresponding number of timeouts
+	timeouts    map[string]uint8                    // Set of timed out peers, mapping peer to the corresponding number of timeouts
+	timeRecords map[common.Hash]*types.TxTimeRecord // Set of the tx time record
 
 	// Callbacks
 	hasTx    func(common.Hash) bool             // Retrieves a tx from the local txpool
@@ -275,6 +276,10 @@ func (f *TxFetcher) Notify(peer string, hashes []common.Hash) error {
 // direct request replies. The differentiation is important so the fetcher can
 // re-shedule missing transactions as soon as possible.
 func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) error {
+	for _, tx := range txs {
+		f.timeRecords[tx.Hash()].Recv = time.Now()
+	}
+
 	// Keep track of all the propagated transactions
 	if direct {
 		txReplyInMeter.Mark(int64(len(txs)))
@@ -434,6 +439,7 @@ func (f *TxFetcher) loop() {
 				// Transaction unknown to the fetcher, insert it into the waiting list
 				f.waitlist[hash] = map[string]struct{}{ann.origin: {}}
 				f.waittime[hash] = f.clock.Now()
+				f.timeRecords[hash] = &types.TxTimeRecord{Ann: time.Now()}
 
 				if waitslots := f.waitslots[ann.origin]; waitslots != nil {
 					waitslots[hash] = struct{}{}
@@ -800,6 +806,9 @@ func (f *TxFetcher) scheduleFetches(timer *mclock.Timer, timeout chan struct{}, 
 				if _, ok := f.alternates[hash]; ok {
 					panic(fmt.Sprintf("alternate tracker already contains fetching item: %v", f.alternates[hash]))
 				}
+
+				f.timeRecords[hash].Req = time.Now()
+
 				f.alternates[hash] = f.announced[hash]
 				delete(f.announced, hash)
 
@@ -887,6 +896,11 @@ func (f *TxFetcher) onTimeout(peer string) {
 		f.dropPeer(peer) // Disconnect the peer
 		f.Drop(peer)     // Clean up
 	}
+}
+
+// GetTxTimeRecord returns the time record of the given tx.
+func (f *TxFetcher) GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord {
+	return f.timeRecords[txHash]
 }
 
 // rotateStrings rotates the contents of a slice by n steps. This method is only

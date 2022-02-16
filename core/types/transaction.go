@@ -532,3 +532,16 @@ func (m Message) Nonce() uint64          { return m.nonce }
 func (m Message) Data() []byte           { return m.data }
 func (m Message) AccessList() AccessList { return m.accessList }
 func (m Message) CheckNonce() bool       { return m.checkNonce }
+
+// TxTimeRecord records the announcement time, request time and received time of the tx.
+type TxTimeRecord struct {
+	Ann  time.Time
+	Req  time.Time
+	Recv time.Time
+}
+
+// TransactionWithTimeRecord is a transaction wrapper with the tx time record
+type TransactionWithTimeRecord struct {
+	*Transaction
+	TimeRecord *TxTimeRecord
+}

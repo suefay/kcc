@@ -179,7 +179,7 @@ func (api *PublicFilterAPI) NewPendingTransactions(ctx context.Context) (*rpc.Su
 
 // NewPendingTransactionsEx extends NewPendingTransactions to notify the transaction itself instead of the transaction hash
 // and add the filter criteria.
-func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit PendingTransactionsFilterCriteria) (*rpc.Subscription, error) {
+func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit PendingTransactionsFilterCriteria, withTimeRecord bool) (*rpc.Subscription, error) {
 	notifier, supported := rpc.NotifierFromContext(ctx)
 	if !supported {
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
@@ -196,7 +196,18 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit P
 			case ev := <-txsCh:
 				for _, tx := range ev.Txs {
 					if crit.Match(tx) {
-						notifier.Notify(rpcSub.ID, tx)
+						var data interface{}
+
+						if withTimeRecord {
+							data = &types.TransactionWithTimeRecord{
+								Transaction: tx,
+								TimeRecord:  api.backend.GetTxTimeRecord(tx.Hash()),
+							}
+						} else {
+							data = tx
+						}
+
+						notifier.Notify(rpcSub.ID, data)
 					}
 				}
 			case <-rpcSub.Err():

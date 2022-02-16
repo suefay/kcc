@@ -770,6 +770,10 @@ func (b *filterBackend) GetPoolTransaction(txHash common.Hash) *types.Transactio
 	return nil
 }
 
+func (b *filterBackend) GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord {
+	return nil
+}
+
 func (fb *filterBackend) SubscribeNewTxsEvent(ch chan<- core.NewTxsEvent) event.Subscription {
 	return nullSubscription()
 }

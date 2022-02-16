@@ -86,6 +86,8 @@ type Backend interface {
 	SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription
 	SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription
 
+	GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord
+
 	ChainConfig() *params.ChainConfig
 	Engine() consensus.Engine
 }

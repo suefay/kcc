@@ -192,6 +192,10 @@ func (b *LesApiBackend) GetPoolTransactions() (types.Transactions, error) {
 	return b.eth.txPool.GetTransactions()
 }
 
+func (b *LesApiBackend) GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord {
+	return nil
+}
+
 func (b *LesApiBackend) GetPoolTransaction(txHash common.Hash) *types.Transaction {
 	return b.eth.txPool.GetTransaction(txHash)
 }
