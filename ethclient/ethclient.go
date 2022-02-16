@@ -487,8 +487,14 @@ func (ec *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- co
 
 // SubscribePendingTransactionsEx extends SubscribePendingTransactions to return the transaction itself instead of the hash
 // and add the filter criteria.
-func (ec *Client) SubscribePendingTransactionsEx(ctx context.Context, ch chan<- interface{}, crit filters.PendingTransactionsFilterCriteria, withTimeRecord bool) (*rpc.ClientSubscription, error) {
-	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx", crit, withTimeRecord)
+func (ec *Client) SubscribePendingTransactionsEx(ctx context.Context, ch chan<- *types.Transaction, crit filters.PendingTransactionsFilterCriteria) (*rpc.ClientSubscription, error) {
+	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx", crit, false)
+}
+
+// SubscribePendingTransactionsEx2 is equivalent to SubscribePendingTransactionsEx except that transactions are wrapped with the time record.
+// and add the filter criteria.
+func (ec *Client) SubscribePendingTransactionsEx2(ctx context.Context, ch chan<- *types.TransactionWithTimeRecord, crit filters.PendingTransactionsFilterCriteria) (*rpc.ClientSubscription, error) {
+	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx", crit, true)
 }
 
 // Contract Calling

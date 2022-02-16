@@ -196,18 +196,14 @@ func (api *PublicFilterAPI) NewPendingTransactionsEx(ctx context.Context, crit P
 			case ev := <-txsCh:
 				for _, tx := range ev.Txs {
 					if crit.Match(tx) {
-						var data interface{}
-
 						if withTimeRecord {
-							data = &types.TransactionWithTimeRecord{
+							notifier.Notify(rpcSub.ID, &types.TransactionWithTimeRecord{
 								Transaction: tx,
 								TimeRecord:  api.backend.GetTxTimeRecord(tx.Hash()),
-							}
+							})
 						} else {
-							data = tx
+							notifier.Notify(rpcSub.ID, tx)
 						}
-
-						notifier.Notify(rpcSub.ID, data)
 					}
 				}
 			case <-rpcSub.Err():
@@ -339,7 +335,7 @@ type PendingTransactionsFilterCriteria struct {
 // Match checks if the given transaction satisfies the filter criteria
 func (crit *PendingTransactionsFilterCriteria) Match(tx *types.Transaction) bool {
 	if crit.To != (common.Address{}) {
-		if *tx.To() != crit.To {
+		if tx.To() == nil || *tx.To() != crit.To {
 			return false
 		}
 	}

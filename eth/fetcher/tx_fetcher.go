@@ -216,6 +216,7 @@ func NewTxFetcherForTests(
 		requests:    make(map[string]*txRequest),
 		alternates:  make(map[common.Hash]map[string]struct{}),
 		timeouts:    make(map[string]uint8),
+		timeRecords: make(map[common.Hash]*types.TxTimeRecord),
 		underpriced: mapset.NewSet(),
 		hasTx:       hasTx,
 		addTxs:      addTxs,
@@ -276,10 +277,6 @@ func (f *TxFetcher) Notify(peer string, hashes []common.Hash) error {
 // direct request replies. The differentiation is important so the fetcher can
 // re-shedule missing transactions as soon as possible.
 func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) error {
-	for _, tx := range txs {
-		f.timeRecords[tx.Hash()].Recv = time.Now()
-	}
-
 	// Keep track of all the propagated transactions
 	if direct {
 		txReplyInMeter.Mark(int64(len(txs)))
@@ -577,6 +574,12 @@ func (f *TxFetcher) loop() {
 						stolen[hash] = struct{}{}
 					}
 					delete(f.fetching, hash)
+				}
+
+				if record, ok := f.timeRecords[hash]; ok {
+					record.Recv = time.Now()
+				} else {
+					f.timeRecords[hash] = &types.TxTimeRecord{Recv: time.Now()}
 				}
 			}
 			// In case of a direct delivery, also reschedule anything missing
