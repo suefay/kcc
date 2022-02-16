@@ -532,7 +532,7 @@ func (f *TxFetcher) loop() {
 					f.requests[peer].hashes = nil
 
 					// Handle timeout
-					f.onTimeout(peer)
+					// f.onTimeout(peer)
 				}
 			}
 			// Schedule a new transaction retrieval
