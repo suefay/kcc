@@ -542,6 +542,6 @@ type TxTimeRecord struct {
 
 // TransactionWithTimeRecord is a transaction wrapper with the tx time record
 type TransactionWithTimeRecord struct {
-	*Transaction
+	Tx         *Transaction
 	TimeRecord *TxTimeRecord
 }
