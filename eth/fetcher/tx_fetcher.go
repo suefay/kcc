@@ -810,8 +810,6 @@ func (f *TxFetcher) scheduleFetches(timer *mclock.Timer, timeout chan struct{}, 
 					panic(fmt.Sprintf("alternate tracker already contains fetching item: %v", f.alternates[hash]))
 				}
 
-				f.timeRecords[hash].Req = time.Now()
-
 				f.alternates[hash] = f.announced[hash]
 				delete(f.announced, hash)
 
@@ -825,7 +823,13 @@ func (f *TxFetcher) scheduleFetches(timer *mclock.Timer, timeout chan struct{}, 
 		})
 		// If any hashes were allocated, request them from the peer
 		if len(hashes) > 0 {
-			f.requests[peer] = &txRequest{hashes: hashes, time: f.clock.Now()}
+			time := time.Now()
+			f.requests[peer] = &txRequest{hashes: hashes, time: mclock.AbsTime(time.Unix())}
+
+			for _, hash := range hashes {
+				f.timeRecords[hash].Req = time
+			}
+
 			txRequestOutMeter.Mark(int64(len(hashes)))
 
 			go func(peer string, hashes []common.Hash) {
