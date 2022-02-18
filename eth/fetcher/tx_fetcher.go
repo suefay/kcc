@@ -21,6 +21,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	mapset "github.com/deckarep/golang-set"
@@ -182,6 +183,8 @@ type TxFetcher struct {
 	step  chan struct{} // Notification channel when the fetcher loop iterates
 	clock mclock.Clock  // Time wrapper to simulate in tests
 	rand  *mrand.Rand   // Randomizer to use in tests instead of map range loops (soft-random)
+
+	mu sync.RWMutex // lock for time record operations
 }
 
 // NewTxFetcher creates a transaction fetcher to retrieve transaction
@@ -436,7 +439,10 @@ func (f *TxFetcher) loop() {
 				// Transaction unknown to the fetcher, insert it into the waiting list
 				f.waitlist[hash] = map[string]struct{}{ann.origin: {}}
 				f.waittime[hash] = f.clock.Now()
+
+				f.mu.Lock()
 				f.timeRecords[hash] = &types.TxTimeRecord{Ann: time.Now()}
+				f.mu.Unlock()
 
 				if waitslots := f.waitslots[ann.origin]; waitslots != nil {
 					waitslots[hash] = struct{}{}
@@ -577,9 +583,13 @@ func (f *TxFetcher) loop() {
 				}
 
 				if record, ok := f.timeRecords[hash]; ok {
+					f.mu.Lock()
 					record.Recv = time.Now()
+					f.mu.Unlock()
 				} else {
+					f.mu.Lock()
 					f.timeRecords[hash] = &types.TxTimeRecord{Recv: time.Now()}
+					f.mu.Unlock()
 				}
 			}
 			// In case of a direct delivery, also reschedule anything missing
@@ -826,9 +836,11 @@ func (f *TxFetcher) scheduleFetches(timer *mclock.Timer, timeout chan struct{}, 
 			time := time.Now()
 			f.requests[peer] = &txRequest{hashes: hashes, time: mclock.AbsTime(time.Unix())}
 
+			f.mu.Lock()
 			for _, hash := range hashes {
 				f.timeRecords[hash].Req = time
 			}
+			f.mu.Unlock()
 
 			txRequestOutMeter.Mark(int64(len(hashes)))
 
@@ -907,6 +919,9 @@ func (f *TxFetcher) onTimeout(peer string) {
 
 // GetTxTimeRecord returns the time record of the given tx.
 func (f *TxFetcher) GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	return f.timeRecords[txHash]
 }
 
