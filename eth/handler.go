@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -79,15 +80,16 @@ type txPool interface {
 // handlerConfig is the collection of initialization parameters to create a full
 // node network handler.
 type handlerConfig struct {
-	Database   ethdb.Database            // Database for direct sync insertions
-	Chain      *core.BlockChain          // Blockchain to serve data from
-	TxPool     txPool                    // Transaction pool to propagate from
-	Network    uint64                    // Network identifier to adfvertise
-	Sync       downloader.SyncMode       // Whether to fast or full sync
-	BloomCache uint64                    // Megabytes to alloc for fast sync bloom
-	EventMux   *event.TypeMux            // Legacy event mux, deprecate for `feed`
-	Checkpoint *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
-	Whitelist  map[uint64]common.Hash    // Hard coded whitelist for sync challenged
+	Database     ethdb.Database            // Database for direct sync insertions
+	Chain        *core.BlockChain          // Blockchain to serve data from
+	TxPool       txPool                    // Transaction pool to propagate from
+	Network      uint64                    // Network identifier to adfvertise
+	Sync         downloader.SyncMode       // Whether to fast or full sync
+	BloomCache   uint64                    // Megabytes to alloc for fast sync bloom
+	EventMux     *event.TypeMux            // Legacy event mux, deprecate for `feed`
+	Checkpoint   *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
+	Whitelist    map[uint64]common.Hash    // Hard coded whitelist for sync challenged
+	TrustedNodes []*enode.Node             // Trusted node set
 }
 
 type handler struct {
@@ -117,7 +119,8 @@ type handler struct {
 	txsSub        event.Subscription
 	minedBlockSub *event.TypeMuxSubscription
 
-	whitelist map[uint64]common.Hash
+	whitelist    map[uint64]common.Hash
+	trustedNodes map[string]bool
 
 	// channels for fetcher, syncer, txsyncLoop
 	txsyncCh chan *txsync
@@ -135,17 +138,23 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		config.EventMux = new(event.TypeMux) // Nicety initialization for tests
 	}
 	h := &handler{
-		networkID:  config.Network,
-		forkFilter: forkid.NewFilter(config.Chain),
-		eventMux:   config.EventMux,
-		database:   config.Database,
-		txpool:     config.TxPool,
-		chain:      config.Chain,
-		peers:      newPeerSet(),
-		whitelist:  config.Whitelist,
-		txsyncCh:   make(chan *txsync),
-		quitSync:   make(chan struct{}),
+		networkID:    config.Network,
+		forkFilter:   forkid.NewFilter(config.Chain),
+		eventMux:     config.EventMux,
+		database:     config.Database,
+		txpool:       config.TxPool,
+		chain:        config.Chain,
+		peers:        newPeerSet(),
+		whitelist:    config.Whitelist,
+		trustedNodes: make(map[string]bool),
+		txsyncCh:     make(chan *txsync),
+		quitSync:     make(chan struct{}),
 	}
+
+	for _, n := range config.TrustedNodes {
+		h.trustedNodes[n.ID().String()] = true
+	}
+
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the fast
 		// block is ahead, so fast sync was enabled for this node at a certain point.
@@ -263,12 +272,14 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		return err
 	}
 
-	// Disconnect the peer if its block number is behind the current block number by the threshold
-	peerHeadHash, _ := peer.Head()
-	peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
-	if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
-		peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
-		return p2p.DiscUselessPeer
+	if !h.trustedNodes[peer.ID()] {
+		// Disconnect the peer if its block number is behind the current block number by the threshold
+		peerHeadHash, _ := peer.Head()
+		peerHeadBlock := h.chain.GetBlockByHash(peerHeadHash)
+		if peerHeadBlock != nil && number-peerHeadBlock.NumberU64() > blockDelayThreshold {
+			peer.Log().Debug("Ethereum peer connection failed", "err", "the block delay exceeds the threshold", "threshold", blockDelayThreshold)
+			return p2p.DiscUselessPeer
+		}
 	}
 
 	reject := false // reserved peer slots
@@ -394,6 +405,23 @@ func (h *handler) removePeer(id string) {
 	}
 	// Hard disconnect at the networking layer
 	peer.Peer.Disconnect(p2p.DiscUselessPeer)
+}
+
+// removeUselessPeers removes useless peers whose block number falls behind by the threshold
+func (h *handler) removeUselessPeers() {
+	head := h.chain.CurrentBlock()
+	headBlockNumber := head.NumberU64()
+
+	if headBlockNumber > 0 {
+		destBlock := h.chain.GetBlockByNumber(headBlockNumber - blockDelayThreshold)
+		peers := h.peers.peersWithoutBlock(destBlock.Hash())
+
+		for _, p := range peers {
+			if !h.trustedNodes[p.ID()] {
+				h.removePeer(p.ID())
+			}
+		}
+	}
 }
 
 func (h *handler) Start(maxPeers int) {

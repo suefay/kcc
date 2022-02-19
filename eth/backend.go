@@ -20,7 +20,6 @@ package eth
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"math/big"
 	"runtime"
 	"sync"
@@ -32,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/posa"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
@@ -216,15 +216,16 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		checkpoint = params.TrustedCheckpoints[genesisHash]
 	}
 	if eth.handler, err = newHandler(&handlerConfig{
-		Database:   chainDb,
-		Chain:      eth.blockchain,
-		TxPool:     eth.txPool,
-		Network:    config.NetworkId,
-		Sync:       config.SyncMode,
-		BloomCache: uint64(cacheLimit),
-		EventMux:   eth.eventMux,
-		Checkpoint: checkpoint,
-		Whitelist:  config.Whitelist,
+		Database:     chainDb,
+		Chain:        eth.blockchain,
+		TxPool:       eth.txPool,
+		Network:      config.NetworkId,
+		Sync:         config.SyncMode,
+		BloomCache:   uint64(cacheLimit),
+		EventMux:     eth.eventMux,
+		Checkpoint:   checkpoint,
+		Whitelist:    config.Whitelist,
+		TrustedNodes: eth.p2pServer.TrustedNodes,
 	}); err != nil {
 		return nil, err
 	}
