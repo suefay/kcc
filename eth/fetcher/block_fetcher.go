@@ -33,7 +33,7 @@ import (
 
 const (
 	lightTimeout  = time.Millisecond       // Time allowance before an announced header is explicitly requested
-	arriveTimeout = 500 * time.Millisecond // Time allowance before an announced block/transaction is explicitly requested
+	arriveTimeout = 100 * time.Millisecond // Time allowance before an announced block/transaction is explicitly requested
 	gatherSlack   = 100 * time.Millisecond // Interval used to collate almost-expired announces with fetches
 	fetchTimeout  = 5 * time.Second        // Maximum allotted time to return an explicitly requested block/transaction
 )
