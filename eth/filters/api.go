@@ -284,6 +284,36 @@ func (api *PublicFilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, er
 	return rpcSub, nil
 }
 
+// NewBlock sends a notification each time a new block is announced or broadcasted
+func (api *PublicFilterAPI) NewBlock(ctx context.Context) (*rpc.Subscription, error) {
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	}
+
+	rpcSub := notifier.CreateSubscription()
+
+	go func() {
+		blocks := make(chan core.NewBlockEvent, 1024)
+		blocksSub := api.backend.SubscribeNewBlockEvent(blocks)
+
+		for {
+			select {
+			case b := <-blocks:
+				notifier.Notify(rpcSub.ID, b)
+			case <-rpcSub.Err():
+				blocksSub.Unsubscribe()
+				return
+			case <-notifier.Closed():
+				blocksSub.Unsubscribe()
+				return
+			}
+		}
+	}()
+
+	return rpcSub, nil
+}
+
 // Logs creates a subscription that fires for all new log that match the given filter criteria.
 func (api *PublicFilterAPI) Logs(ctx context.Context, crit FilterCriteria) (*rpc.Subscription, error) {
 	notifier, supported := rpc.NotifierFromContext(ctx)

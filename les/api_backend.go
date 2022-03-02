@@ -247,6 +247,10 @@ func (b *LesApiBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEven
 	return b.eth.blockchain.SubscribeRemovedLogsEvent(ch)
 }
 
+func (b *LesApiBackend) SubscribeNewBlockEvent(ch chan<- core.NewBlockEvent) event.Subscription {
+	return nil
+}
+
 func (b *LesApiBackend) Downloader() *downloader.Downloader {
 	return b.eth.Downloader()
 }

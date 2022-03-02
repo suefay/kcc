@@ -44,6 +44,7 @@ type Backend interface {
 	SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription
 	SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription
 	SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription
+	SubscribeNewBlockEvent(ch chan<- core.NewBlockEvent) event.Subscription
 
 	GetTxTimeRecord(txHash common.Hash) *types.TxTimeRecord
 

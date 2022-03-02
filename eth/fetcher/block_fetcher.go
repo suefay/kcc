@@ -25,7 +25,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/prque"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/trie"
@@ -163,6 +165,9 @@ type BlockFetcher struct {
 	headerFilter chan chan *headerFilterTask
 	bodyFilter   chan chan *bodyFilterTask
 
+	scope     event.SubscriptionScope
+	blockFeed event.Feed
+
 	done chan common.Hash
 	quit chan struct{}
 
@@ -234,6 +239,7 @@ func (f *BlockFetcher) Start() {
 // Stop terminates the announcement based synchroniser, canceling all pending
 // operations.
 func (f *BlockFetcher) Stop() {
+	f.scope.Close()
 	close(f.quit)
 }
 
@@ -404,6 +410,11 @@ func (f *BlockFetcher) loop() {
 			}
 			f.announces[notification.origin] = count
 			f.announced[notification.hash] = append(f.announced[notification.hash], notification)
+
+			if len(f.announced[notification.hash]) == 1 {
+				f.blockFeed.Send(core.NewBlockEvent{Hash: notification.hash, Number: notification.number})
+			}
+
 			if f.announceChangeHook != nil && len(f.announced[notification.hash]) == 1 {
 				f.announceChangeHook(notification.hash, true)
 			}
@@ -415,11 +426,14 @@ func (f *BlockFetcher) loop() {
 			// A direct block insertion was requested, try and fill any pending gaps
 			blockBroadcastInMeter.Mark(1)
 
+			f.blockFeed.Send(core.NewBlockEvent{Hash: op.hash(), Number: op.number()})
+
 			// Now only direct block injection is allowed, drop the header injection
 			// here silently if we receive.
 			if f.light {
 				continue
 			}
+
 			f.enqueue(op.origin, nil, op.block)
 
 		case hash := <-f.done:
@@ -877,4 +891,9 @@ func (f *BlockFetcher) forgetBlock(hash common.Hash) {
 		}
 		delete(f.queued, hash)
 	}
+}
+
+// SubscribeNewBlockEvent registers a subscription of NewBlockEvent.
+func (f *BlockFetcher) SubscribeNewBlockEvent(ch chan<- core.NewBlockEvent) event.Subscription {
+	return f.scope.Track(f.blockFeed.Subscribe(ch))
 }

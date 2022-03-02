@@ -794,6 +794,10 @@ func (fb *filterBackend) SubscribePendingLogsEvent(ch chan<- []*types.Log) event
 	return nullSubscription()
 }
 
+func (fb *filterBackend) SubscribeNewBlockEvent(ch chan<- core.NewBlockEvent) event.Subscription {
+	return nil
+}
+
 func (fb *filterBackend) BloomStatus() (uint64, uint64) { return 4096, 0 }
 
 func (fb *filterBackend) ServiceFilter(ctx context.Context, ms *bloombits.MatcherSession) {

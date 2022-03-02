@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -492,9 +493,13 @@ func (ec *Client) SubscribePendingTransactionsEx(ctx context.Context, ch chan<- 
 }
 
 // SubscribePendingTransactionsEx2 is equivalent to SubscribePendingTransactionsEx except that transactions are wrapped with the time record.
-// and add the filter criteria.
 func (ec *Client) SubscribePendingTransactionsEx2(ctx context.Context, ch chan<- *types.TransactionWithTimeRecord, crit filters.PendingTransactionsFilterCriteria) (*rpc.ClientSubscription, error) {
 	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsEx", crit, true)
+}
+
+// SubscribeNewBlock subscribes to new block events.
+func (ec *Client) SubscribeNewBlock(ctx context.Context, ch chan<- core.NewBlockEvent) (*rpc.ClientSubscription, error) {
+	return ec.c.EthSubscribe(ctx, ch, "newBlock")
 }
 
 // Contract Calling

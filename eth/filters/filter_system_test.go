@@ -130,6 +130,10 @@ func (b *testBackend) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subsc
 	return b.chainFeed.Subscribe(ch)
 }
 
+func (b *testBackend) SubscribeNewBlockEvent(ch chan<- core.NewBlockEvent) event.Subscription {
+	return nil
+}
+
 func (b *testBackend) BloomStatus() (uint64, uint64) {
 	return params.BloomBitsBlocks, b.sections
 }

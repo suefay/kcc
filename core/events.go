@@ -41,3 +41,9 @@ type ChainSideEvent struct {
 }
 
 type ChainHeadEvent struct{ Block *types.Block }
+
+// NewBlockEvent is posted when a new block is announced or broadcasted
+type NewBlockEvent struct {
+	Hash   common.Hash
+	Number uint64
+}
