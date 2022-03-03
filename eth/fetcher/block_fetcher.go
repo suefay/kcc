@@ -22,6 +22,8 @@ import (
 	"math/rand"
 	"time"
 
+	mapset "github.com/deckarep/golang-set"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/prque"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -45,6 +47,11 @@ const (
 	maxQueueDist = 32  // Maximum allowed distance from the chain head to queue
 	hashLimit    = 256 // Maximum number of unique blocks or headers a peer may have announced
 	blockLimit   = 64  // Maximum number of unique blocks a peer may have delivered
+)
+
+const (
+	maxKnownBlocks = 1024 // Maximum number of block announces or direct blocks to keep in the known list
+	// before starting to randomly evict them.
 )
 
 var (
@@ -183,6 +190,9 @@ type BlockFetcher struct {
 	queues map[string]int                       // Per peer block counts to prevent memory exhaustion
 	queued map[common.Hash]*blockOrHeaderInject // Set of already queued blocks (to dedup imports)
 
+	// Global block announce or direct block sets
+	knownBlocks mapset.Set
+
 	// Callbacks
 	getHeader      HeaderRetrievalFn  // Retrieves a header from the local chain
 	getBlock       blockRetrievalFn   // Retrieves a block from the local chain
@@ -219,6 +229,7 @@ func NewBlockFetcher(light bool, getHeader HeaderRetrievalFn, getBlock blockRetr
 		queue:          prque.New(nil),
 		queues:         make(map[string]int),
 		queued:         make(map[common.Hash]*blockOrHeaderInject),
+		knownBlocks:    mapset.NewSet(),
 		getHeader:      getHeader,
 		getBlock:       getBlock,
 		verifyHeader:   verifyHeader,
@@ -411,8 +422,9 @@ func (f *BlockFetcher) loop() {
 			f.announces[notification.origin] = count
 			f.announced[notification.hash] = append(f.announced[notification.hash], notification)
 
-			if len(f.announced[notification.hash]) == 1 {
+			if !f.knownBlocks.Contains(notification.hash) {
 				f.blockFeed.Send(core.NewBlockEvent{Hash: notification.hash, Number: notification.number})
+				f.markBlock(notification.hash)
 			}
 
 			if f.announceChangeHook != nil && len(f.announced[notification.hash]) == 1 {
@@ -426,12 +438,15 @@ func (f *BlockFetcher) loop() {
 			// A direct block insertion was requested, try and fill any pending gaps
 			blockBroadcastInMeter.Mark(1)
 
-			f.blockFeed.Send(core.NewBlockEvent{Hash: op.hash(), Number: op.number()})
-
 			// Now only direct block injection is allowed, drop the header injection
 			// here silently if we receive.
 			if f.light {
 				continue
+			}
+
+			if !f.knownBlocks.Contains(op.hash()) {
+				f.blockFeed.Send(core.NewBlockEvent{Hash: op.hash(), Number: op.number()})
+				f.markBlock(op.hash())
 			}
 
 			f.enqueue(op.origin, nil, op.block)
@@ -891,6 +906,15 @@ func (f *BlockFetcher) forgetBlock(hash common.Hash) {
 		}
 		delete(f.queued, hash)
 	}
+}
+
+// markBlock marks a block announce or direct block as known for the block fetcher.
+func (f *BlockFetcher) markBlock(hash common.Hash) {
+	// If we reached the memory allowance, drop a previously known block hash
+	for f.knownBlocks.Cardinality() >= maxKnownBlocks {
+		f.knownBlocks.Pop()
+	}
+	f.knownBlocks.Add(hash)
 }
 
 // SubscribeNewBlockEvent registers a subscription of NewBlockEvent.
