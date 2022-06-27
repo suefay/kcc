@@ -18,13 +18,14 @@
 package ethconfig
 
 import (
-	"github.com/ethereum/go-ethereum/consensus/posa"
 	"math/big"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/ethereum/go-ethereum/consensus/posa"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -212,6 +213,10 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 	}
 	// If proof-of-stake-authority is requested, set it up
 	if chainConfig.POSA != nil {
+		// @Junm @Cary TODO：validate posa config
+		if err := chainConfig.POSA.Validate(chainConfig); err != nil {
+			log.Crit("POSA config in chainConfig is invalid", "reason", err)
+		}
 		return posa.New(chainConfig, db)
 	}
 	// Otherwise assume proof-of-work

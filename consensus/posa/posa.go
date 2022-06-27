@@ -8,7 +8,7 @@
 //
 // The go-ethereum library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FI TNESS FOR A PARTICULAR PURPOSE. See the
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
@@ -52,7 +52,7 @@ const (
 	inmemorySignatures = 4096 // Number of recent block signatures to keep in memory
 
 	wiggleTime    = 500 * time.Millisecond // Random delay (per validator) to allow concurrent validators
-	maxValidators = 21                     // Max validators allowed to seal.
+	maxValidators = 29                     // Max validators allowed to seal.
 )
 
 // proof-of-stake-authority protocol constants.
@@ -76,6 +76,16 @@ var (
 	validatorsContractAddr = common.HexToAddress("0x000000000000000000000000000000000000f000")
 	punishContractAddr     = common.HexToAddress("0x000000000000000000000000000000000000f111")
 	proposalAddr           = common.HexToAddress("0x000000000000000000000000000000000000f222")
+
+	// @cary TODO: use a new set of addresses
+	IshikariValidatorsContractName  = "validatorsIshikari"
+	IshikariPunishContractName      = "punishIshikari"
+	IshikariProposalContractName    = "proposalIshikari"
+	IshikariReservePoolContractName = "reservePoolIshikari"
+	IshikariValidatorsContractAddr  = common.HexToAddress("0x000000000000000000000000000000000000f333")
+	IshikariPunishContractAddr      = common.HexToAddress("0x000000000000000000000000000000000000f444")
+	IshikariProposalAddr            = common.HexToAddress("0x000000000000000000000000000000000000f555")
+	IshikariReservePoolAddr         = consensus.IshikariFeeReceiver
 )
 
 // Various error messages to mark blocks invalid. These should be private to
@@ -131,7 +141,7 @@ var (
 	errRecentlySigned = errors.New("recently signed")
 
 	// errInvalidValidatorLen is returned if validators length is zero or bigger than maxValidators.
-	errInvalidValidatorsLength = errors.New("Invalid validators length")
+	errInvalidValidatorsLength = errors.New("Invalid validators or managers length")
 
 	// errInvalidCoinbase is returned if the coinbase isn't the validator of the block.
 	errInvalidCoinbase = errors.New("Invalid coin base")
@@ -186,7 +196,8 @@ type POSA struct {
 
 	stateFn StateFn // Function to get state by state root
 
-	abi map[string]abi.ABI // Interactive with system contracts
+	abi           map[string]abi.ABI        // Interactive with system contracts
+	contractAddrs map[string]common.Address // system contracts address
 
 	// The fields below are for testing only
 	fakeDiff bool // Skip difficulty verifications
@@ -204,16 +215,17 @@ func New(chainConfig *params.ChainConfig, db ethdb.Database) *POSA {
 	recents, _ := lru.NewARC(inmemorySnapshots)
 	signatures, _ := lru.NewARC(inmemorySignatures)
 
-	interactiveABI := getInteractiveABI()
+	interactiveABI, interactiveAddrs := getInteractiveABIAndAddrs()
 
 	return &POSA{
-		chainConfig: chainConfig,
-		config:      &conf,
-		db:          db,
-		recents:     recents,
-		signatures:  signatures,
-		proposals:   make(map[common.Address]bool),
-		abi:         interactiveABI,
+		chainConfig:   chainConfig,
+		config:        &conf,
+		db:            db,
+		recents:       recents,
+		signatures:    signatures,
+		proposals:     make(map[common.Address]bool),
+		abi:           interactiveABI,
+		contractAddrs: interactiveAddrs,
 	}
 }
 
@@ -546,6 +558,21 @@ func (c *POSA) Finalize(chain consensus.ChainHeaderReader, header *types.Header,
 		}
 	}
 
+	if c.chainConfig.IsIshikariHardforkBlock(header.Number) {
+		if err := c.initializeSystemContractsIshikari(chain, header, state); err != nil {
+			log.Error("Initialize system contracts of Ishikari failed", "err", err)
+			return err
+		}
+	}
+
+	// In Ishikari Patch 001, We have fixed some minor bugs found on testnets.
+	if c.chainConfig.IsIshikariPatch001HardforkBlock(header.Number) {
+		for _, p := range getIshikariPatch001() {
+			// apply each patch
+			p(state)
+		}
+	}
+
 	if header.Difficulty.Cmp(diffInTurn) != 0 {
 		if err := c.tryPunishValidator(chain, header, state); err != nil {
 			return err
@@ -553,10 +580,8 @@ func (c *POSA) Finalize(chain consensus.ChainHeaderReader, header *types.Header,
 	}
 
 	// execute block reward tx.
-	if len(txs) > 0 {
-		if err := c.trySendBlockReward(chain, header, state); err != nil {
-			return err
-		}
+	if err := c.trySendBlockReward(chain, header, state); err != nil {
+		return err
 	}
 
 	// do epoch thing at the end, because it will update active validators
@@ -594,6 +619,24 @@ func (c *POSA) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *ty
 		}
 	}
 
+	// initializeSystemContractsIshikari
+	//    - SetCode
+	//    - Initialize all system contracts (call initialize)
+	if c.chainConfig.IsIshikariHardforkBlock(header.Number) {
+		if err := c.initializeSystemContractsIshikari(chain, header, state); err != nil {
+			log.Error("Initialize system contracts for Ishikari failed", "err", err)
+			panic(err)
+		}
+	}
+
+	// In Ishikari Patch 001, We have fixed some minor bugs found on testnets.
+	if c.chainConfig.IsIshikariPatch001HardforkBlock(header.Number) {
+		for _, p := range getIshikariPatch001() {
+			// apply each patch
+			p(state)
+		}
+	}
+
 	// punish validator if necessary
 	if header.Difficulty.Cmp(diffInTurn) != 0 {
 		if err := c.tryPunishValidator(chain, header, state); err != nil {
@@ -601,11 +644,9 @@ func (c *POSA) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *ty
 		}
 	}
 
-	// deposit block reward if any tx exists.
-	if len(txs) > 0 {
-		if err := c.trySendBlockReward(chain, header, state); err != nil {
-			panic(err)
-		}
+	// execute block reward tx.
+	if err := c.trySendBlockReward(chain, header, state); err != nil {
+		panic(err)
 	}
 
 	// do epoch thing at the end, because it will update active validators
@@ -624,25 +665,40 @@ func (c *POSA) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *ty
 }
 
 func (c *POSA) trySendBlockReward(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
-	fee := state.GetBalance(consensus.FeeRecoder)
-	if fee.Cmp(common.Big0) <= 0 {
-		return nil
+	// @cary TODO: remove feeRecoder ?
+	//       WARNING: If someone has sent KCS to FeeRecoder.....
+	//                something bad will happen on new client
+
+	amount := new(big.Int)
+	if !c.chainConfig.IsKCCIshikari(header.Number) {
+		amount = state.GetBalance(consensus.FeeRecoder)
+		if amount.Cmp(common.Big0) <= 0 {
+			return nil
+		}
+
+		// Miner will send tx to deposit block fees to contract, add to his balance first.
+		state.AddBalance(header.Coinbase, amount)
+		// defer reset fee
+		defer state.SetBalance(consensus.FeeRecoder, common.Big0)
 	}
 
-	// Miner will send tx to deposit block fees to contract, add to his balance first.
-	state.AddBalance(header.Coinbase, fee)
-	// defer reset fee
-	defer state.SetBalance(consensus.FeeRecoder, common.Big0)
+	// distribute block rewards
+
+	contractName := validatorsContractName
+	if c.chainConfig.IsKCCIshikari(header.Number) {
+		contractName = IshikariValidatorsContractName
+	}
+	contractAddr := c.contractAddrs[contractName]
 
 	method := "distributeBlockReward"
-	data, err := c.abi[validatorsContractName].Pack(method)
+	data, err := c.abi[contractName].Pack(method)
 	if err != nil {
 		log.Error("Can't pack data for distributeBlockReward", "err", err)
 		return err
 	}
 
 	nonce := state.GetNonce(header.Coinbase)
-	msg := types.NewMessage(header.Coinbase, &validatorsContractAddr, nonce, fee, math.MaxUint64, new(big.Int), data, nil, true)
+	msg := types.NewMessage(header.Coinbase, &contractAddr, nonce, amount, math.MaxUint64, new(big.Int), data, nil, true)
 
 	if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
 		return err
@@ -682,8 +738,9 @@ func (c *POSA) doSomethingAtEpoch(chain consensus.ChainHeaderReader, header *typ
 		return []common.Address{}, err
 	}
 
+	// @cary TODO: new "updateValidators"
 	// update contract new validators if new set exists
-	if err := c.updateValidators(chain, header, state); err != nil {
+	if err := c.updateValidators(chain, header, state, newSortedValidators); err != nil {
 		return []common.Address{}, err
 	}
 	//  decrease validator missed blocks counter at epoch
@@ -746,14 +803,23 @@ func (c *POSA) getTopValidators(chain consensus.ChainHeaderReader, header *types
 		return []common.Address{}, err
 	}
 
+	contractName := validatorsContractName
+
+	if c.chainConfig.IsKCCIshikari(header.Number) {
+		contractName = IshikariValidatorsContractName
+	}
+
+	// @cary new getTopValidators contract address after hardfork
 	method := "getTopValidators"
-	data, err := c.abi[validatorsContractName].Pack(method)
+	data, err := c.abi[contractName].Pack(method)
 	if err != nil {
 		log.Error("Can't pack data for getTopValidators", "error", err)
 		return []common.Address{}, err
 	}
 
-	msg := types.NewMessage(header.Coinbase, &validatorsContractAddr, 0, new(big.Int), math.MaxUint64, new(big.Int), data, nil, false)
+	contractAddr := c.contractAddrs[contractName]
+
+	msg := types.NewMessage(header.Coinbase, &contractAddr, 0, new(big.Int), math.MaxUint64, new(big.Int), data, nil, false)
 
 	// use parent
 	result, err := executeMsg(msg, stateDB, parent, newChainContext(chain, c), c.chainConfig)
@@ -762,7 +828,7 @@ func (c *POSA) getTopValidators(chain consensus.ChainHeaderReader, header *types
 	}
 
 	// unpack data
-	ret, err := c.abi[validatorsContractName].Unpack(method, result)
+	ret, err := c.abi[contractName].Unpack(method, result)
 	if err != nil {
 		return []common.Address{}, err
 	}
@@ -777,30 +843,61 @@ func (c *POSA) getTopValidators(chain consensus.ChainHeaderReader, header *types
 	return validators, err
 }
 
-func (c *POSA) updateValidators(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
-	// method
-	method := "updateActiveValidatorSet"
-	data, err := c.abi[validatorsContractName].Pack(method, new(big.Int).SetUint64(c.config.Epoch))
-	if err != nil {
-		log.Error("Can't pack data for updateActiveValidatorSet", "error", err)
-		return err
-	}
+func (c *POSA) updateValidators(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, newValidators []common.Address) error {
 
-	// call contract
-	nonce := state.GetNonce(header.Coinbase)
-	msg := types.NewMessage(header.Coinbase, &validatorsContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
-	if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
-		log.Error("Can't update validators to contract", "err", err)
-		return err
+	if c.chainConfig.IsKCCIshikari(header.Number) {
+
+		// method
+		method := "updateActiveValidatorSet"
+		data, err := c.abi[IshikariValidatorsContractName].Pack(method, newValidators)
+		if err != nil {
+			log.Error("Can't pack data for updateActiveValidatorSet", "error", err)
+			return err
+		}
+
+		// call contract
+		nonce := state.GetNonce(header.Coinbase)
+		addr := IshikariValidatorsContractAddr
+		msg := types.NewMessage(header.Coinbase, &addr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+		if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			log.Error("Can't update validators to contract", "err", err)
+			return err
+		}
+	} else {
+
+		// method
+		method := "updateActiveValidatorSet"
+		data, err := c.abi[validatorsContractName].Pack(method, new(big.Int).SetUint64(c.config.Epoch))
+		if err != nil {
+			log.Error("Can't pack data for updateActiveValidatorSet", "error", err)
+			return err
+		}
+
+		// call contract
+		nonce := state.GetNonce(header.Coinbase)
+		msg := types.NewMessage(header.Coinbase, &validatorsContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+		if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			log.Error("Can't update validators to contract", "err", err)
+			return err
+		}
+
 	}
 
 	return nil
 }
 
 func (c *POSA) punishValidator(val common.Address, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
+
+	contractName := punishContractName
+	if c.chainConfig.IsKCCIshikari(header.Number) {
+		contractName = IshikariPunishContractName
+	}
+	contractAddr := c.contractAddrs[contractName]
+
 	// method
 	method := "punish"
-	data, err := c.abi[punishContractName].Pack(method, val)
+	// @cary use new punishContract Address after hardfork
+	data, err := c.abi[contractName].Pack(method, val)
 	if err != nil {
 		log.Error("Can't pack data for punish", "error", err)
 		return err
@@ -808,7 +905,7 @@ func (c *POSA) punishValidator(val common.Address, chain consensus.ChainHeaderRe
 
 	// call contract
 	nonce := state.GetNonce(header.Coinbase)
-	msg := types.NewMessage(header.Coinbase, &punishContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+	msg := types.NewMessage(header.Coinbase, &contractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
 	if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
 		log.Error("Can't punish validator", "err", err)
 		return err
@@ -818,23 +915,48 @@ func (c *POSA) punishValidator(val common.Address, chain consensus.ChainHeaderRe
 }
 
 func (c *POSA) decreaseMissedBlocksCounter(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
-	// method
-	method := "decreaseMissedBlocksCounter"
-	data, err := c.abi[punishContractName].Pack(method, new(big.Int).SetUint64(c.config.Epoch))
-	if err != nil {
-		log.Error("Can't pack data for decreaseMissedBlocksCounter", "error", err)
-		return err
+
+	if c.chainConfig.IsKCCIshikari(header.Number) {
+
+		// method
+		method := "decreaseMissedBlocksCounter"
+		data, err := c.abi[IshikariPunishContractName].Pack(method)
+		if err != nil {
+			log.Error("Can't pack data for decreaseMissedBlocksCounter", "error", err)
+			return err
+		}
+
+		// call contract
+		nonce := state.GetNonce(header.Coinbase)
+		msg := types.NewMessage(header.Coinbase, &IshikariPunishContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+		if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			log.Error("Can't decrease missed blocks counter for validator", "err", err)
+			return err
+		}
+
+		return nil
+
+	} else {
+
+		// method
+		method := "decreaseMissedBlocksCounter"
+		data, err := c.abi[punishContractName].Pack(method, new(big.Int).SetUint64(c.config.Epoch))
+		if err != nil {
+			log.Error("Can't pack data for decreaseMissedBlocksCounter", "error", err)
+			return err
+		}
+
+		// call contract
+		nonce := state.GetNonce(header.Coinbase)
+		msg := types.NewMessage(header.Coinbase, &punishContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+		if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			log.Error("Can't decrease missed blocks counter for validator", "err", err)
+			return err
+		}
+
+		return nil
 	}
 
-	// call contract
-	nonce := state.GetNonce(header.Coinbase)
-	msg := types.NewMessage(header.Coinbase, &punishContractAddr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
-	if _, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
-		log.Error("Can't decrease missed blocks counter for validator", "err", err)
-		return err
-	}
-
-	return nil
 }
 
 // Authorize injects a private key into the consensus engine to mint new blocks
@@ -1002,4 +1124,33 @@ func encodeSigHeader(w io.Writer, header *types.Header) {
 	if err != nil {
 		panic("can't encode: " + err.Error())
 	}
+}
+
+//
+// Ishikari Hard Fork Related
+//
+func (c *POSA) initializeSystemContractsIshikari(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
+
+	if len(c.config.IshikariInitialValidators) == 0 || len(c.config.IshikariInitialManagers) == 0 || len(c.config.IshikariInitialValidators) != len(c.config.IshikariInitialManagers) {
+		return errInvalidValidatorsLength
+	}
+
+	for _, contract := range getIshikariSystemContracts(c.abi, c.config.IshikariInitialValidators, c.config.IshikariInitialManagers, c.config.IshikariAdminMultiSig, big.NewInt(int64(c.config.Epoch))) {
+
+		state.SetCode(contract.addr, contract.code)
+
+		data, err := contract.packFun()
+		if err != nil {
+			return err
+		}
+
+		nonce := state.GetNonce(header.Coinbase)
+		msg := types.NewMessage(header.Coinbase, &contract.addr, nonce, new(big.Int), math.MaxUint64, new(big.Int), data, nil, true)
+
+		if ret, err := executeMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			panic(string(ret))
+		}
+	}
+
+	return nil
 }

@@ -29,6 +29,9 @@ import (
 
 var FeeRecoder = common.HexToAddress("0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF")
 
+// All transaction fees will be sent to this address
+var IshikariFeeReceiver = common.HexToAddress("0x000000000000000000000000000000000000f999")
+
 // ChainHeaderReader defines a small collection of methods needed to access the local
 // blockchain during header verification.
 type ChainHeaderReader interface {

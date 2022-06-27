@@ -18,6 +18,7 @@ package params
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -56,7 +57,17 @@ var (
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
-		POSA:                &POSAConfig{Period: 3, Epoch: 100},
+		CVE_2021_39137Block: big.NewInt(2509228), // see more in: core/vm/instructions_kcc_issue_9.go
+		// @cary the block when hardfork happens.
+		IshikariBlock:         nil,
+		IshikariPatch001Block: nil,
+		POSA: &POSAConfig{
+			Period:                    3,
+			Epoch:                     100,
+			IshikariInitialValidators: []common.Address{}, // @cary @Junm TODO: Ishikari initial validators
+			IshikariInitialManagers:   []common.Address{},
+			IshikariAdminMultiSig:     common.Address{},
+		},
 	}
 
 	// TestnetChainConfig contains the chain parameters to run a node on the Ropsten test network.
@@ -75,7 +86,33 @@ var (
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
-		POSA:                &POSAConfig{Period: 3, Epoch: 100},
+		CVE_2021_39137Block: big.NewInt(0),
+
+		// @cary the block when hardfork happens.
+		IshikariBlock: big.NewInt(11321699),
+		// Ishikari patch 001
+		IshikariPatch001Block: big.NewInt(12153317),
+
+		// Ishikari patch001
+		// Fix minor bugs found in testnet
+
+		POSA: &POSAConfig{
+			Period: 3,
+			Epoch:  100,
+			IshikariInitialValidators: []common.Address{
+				common.HexToAddress("0x20b9a60c5a2137259ce81e45a1310a754270753b"),
+				common.HexToAddress("0xe40c3ef8dc2dd6d3edecd8ebdc64a6b68f530589"),
+				common.HexToAddress("0xce7878e800408d60e7b55d7d5c56519f329a77fc"),
+				common.HexToAddress("0xbf8144aa88bea302548f51b3d776b8b7e4453449"),
+			}, //@cary: the initial validators for Ishikari hardfork
+			IshikariInitialManagers: []common.Address{
+				common.HexToAddress("0xc6C450C46F71AD568d8BfA16Ca597906eb017c71"),
+				common.HexToAddress("0x9E207e1e0BB946d676fA5c86ed95cC997d6A6369"),
+				common.HexToAddress("0x0B3c112e1dc42487302d3d8b5c0A714Ec5BeBe27"),
+				common.HexToAddress("0x6862F46C4cf0E4ECCE9186651637F4c692015A7c"),
+			},
+			IshikariAdminMultiSig: common.HexToAddress("0x22e4A5dfFee45CeaBd4d7c45814BfC27dF3776b4"), // @cary: the multisig address for admin
+		},
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -83,16 +120,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, new(EthashConfig), nil, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, new(EthashConfig), nil, nil}
 )
 
 // TrustedCheckpoint represents a set of post-processed trie roots (CHT and
@@ -164,8 +201,24 @@ type ChainConfig struct {
 	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
 
+	// This is a "fake" hardfork to fix an issue in a past block(#2509228).
+	// By saying it is "fake", we mean it should behave as if it does not exist.
+	// The hardfork should not reflect on the forkid.
+	// see more in : core/vm/instructions_kcc_issue_9.go
+	CVE_2021_39137Block *big.Int `json:"cve_2021_39137Block,omitempty"`
+
+	// In Ishikari hardfork
+	// KCC introduces a new version of validators contract.
+	IshikariBlock *big.Int `json:"ishikariBlock,omitempty"`
+
+	// A patch for Ishikari hardfork
+	// Fix minor bugs found on testnet
+	IshikariPatch001Block *big.Int `json:"ishikariPatch001Block,omitempty"`
+
 	YoloV3Block *big.Int `json:"yoloV3Block,omitempty"` // YOLO v3: Gas repricings TODO @holiman add EIP references
 	EWASMBlock  *big.Int `json:"ewasmBlock,omitempty"`  // EWASM switch block (nil = no fork, 0 = already activated)
+
+	//
 
 	// Various consensus engines
 	Ethash *EthashConfig `json:"ethash,omitempty"`
@@ -196,11 +249,53 @@ func (c *CliqueConfig) String() string {
 type POSAConfig struct {
 	Period uint64 `json:"period"` // Number of seconds between blocks to enforce
 	Epoch  uint64 `json:"epoch"`  // Epoch length to reset votes and checkpoint
+
+	// Ishikari hardfork related configs
+	// Ishikari initial validators
+	IshikariInitialValidators []common.Address `json:"ishikariInitialValidators"`
+	IshikariInitialManagers   []common.Address `json:"ishikariInitialManagers"`
+	// Ishikari admin multisig Address
+	IshikariAdminMultiSig common.Address `json:"ishikariAdminAddress"`
+}
+
+// Validate POSA Contraints
+func (c *POSAConfig) Validate(chainCfg *ChainConfig) error {
+
+	if c.Period == 0 {
+		return fmt.Errorf("POSAConfig.Period should not be 0")
+	}
+
+	if c.Epoch < 2 {
+		return fmt.Errorf("POSAConfig.Epoch should be not be less than 2")
+	}
+
+	if chainCfg.IshikariBlock == nil {
+		// if Ishikari hardfork is not enabled yet,
+		// we don't need to verify other fields at this moment.
+		return nil
+	}
+
+	if len(c.IshikariInitialManagers) < 1 {
+		return fmt.Errorf("length of POSAConfig.V2InitialManagers must not be less than 1")
+	}
+
+	if len(c.IshikariInitialManagers) != len(c.IshikariInitialValidators) {
+		return fmt.Errorf("numbers of initial validators & initial managers do not match (%v!=%v)",
+			len(c.IshikariInitialManagers), len(c.IshikariInitialValidators))
+	}
+
+	// The hardfork should happen at the last block of some epoch
+	if chainCfg.IshikariBlock != nil && ((chainCfg.IshikariBlock.Uint64()+1)%c.Epoch != 0) {
+		return fmt.Errorf("IshikariBlock should be the last block of some epoch")
+	}
+
+	return nil
 }
 
 // String implements the stringer interface, returning the consensus engine details.
 func (c *POSAConfig) String() string {
-	return "posa"
+	d, _ := json.Marshal(c)
+	return fmt.Sprintf("posa(%v)", string(d))
 }
 
 // String implements the fmt.Stringer interface.
@@ -216,7 +311,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, YOLO v3: %v, Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, cve_2021_39137Block:%v, Ishikari: %v, IshikariPatch: %v, YOLO v3: %v, Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -230,6 +325,9 @@ func (c *ChainConfig) String() string {
 		c.IstanbulBlock,
 		c.MuirGlacierBlock,
 		c.BerlinBlock,
+		c.CVE_2021_39137Block,
+		c.IshikariBlock,
+		c.IshikariPatch001Block,
 		c.YoloV3Block,
 		engine,
 	)
@@ -297,6 +395,27 @@ func (c *ChainConfig) IsEWASM(num *big.Int) bool {
 	return isForked(c.EWASMBlock, num)
 }
 
+// is Ishikari hardfork enabled ?
+func (c *ChainConfig) IsKCCIshikari(num *big.Int) bool {
+	return isForked(c.IshikariBlock, num)
+}
+
+// is the block number "num" when Ishikari hardfork happens ?
+func (c *ChainConfig) IsIshikariHardforkBlock(num *big.Int) bool {
+	if num == nil || c.IshikariBlock == nil {
+		return false
+	}
+	return num.Cmp(c.IshikariBlock) == 0
+}
+
+// is the block number "num" when IshikariPatch001 hardfork happens ?
+func (c *ChainConfig) IsIshikariPatch001HardforkBlock(num *big.Int) bool {
+	if num == nil || c.IshikariPatch001Block == nil {
+		return false
+	}
+	return num.Cmp(c.IshikariPatch001Block) == 0
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
@@ -336,6 +455,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "istanbulBlock", block: c.IstanbulBlock},
 		{name: "muirGlacierBlock", block: c.MuirGlacierBlock, optional: true},
 		{name: "berlinBlock", block: c.BerlinBlock},
+		{name: "ishikariBlock", block: c.IshikariBlock},
 	} {
 		if lastFork.name != "" {
 			// Next one must be higher number
@@ -408,6 +528,10 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	if isForkIncompatible(c.EWASMBlock, newcfg.EWASMBlock, head) {
 		return newCompatError("ewasm fork block", c.EWASMBlock, newcfg.EWASMBlock)
 	}
+
+	if isForkIncompatible(c.IshikariBlock, newcfg.IshikariBlock, head) {
+		return newCompatError("Ishikari fork block", c.IshikariBlock, newcfg.IshikariBlock)
+	}
 	return nil
 }
 
@@ -476,6 +600,8 @@ type Rules struct {
 	IsHomestead, IsEIP150, IsEIP155, IsEIP158               bool
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
 	IsBerlin                                                bool
+	IsIshikari                                              bool
+	IsCVE_2021_39137BlockPassed                             bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -485,15 +611,17 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 		chainID = new(big.Int)
 	}
 	return Rules{
-		ChainID:          new(big.Int).Set(chainID),
-		IsHomestead:      c.IsHomestead(num),
-		IsEIP150:         c.IsEIP150(num),
-		IsEIP155:         c.IsEIP155(num),
-		IsEIP158:         c.IsEIP158(num),
-		IsByzantium:      c.IsByzantium(num),
-		IsConstantinople: c.IsConstantinople(num),
-		IsPetersburg:     c.IsPetersburg(num),
-		IsIstanbul:       c.IsIstanbul(num),
-		IsBerlin:         c.IsBerlin(num),
+		ChainID:                     new(big.Int).Set(chainID),
+		IsHomestead:                 c.IsHomestead(num),
+		IsEIP150:                    c.IsEIP150(num),
+		IsEIP155:                    c.IsEIP155(num),
+		IsEIP158:                    c.IsEIP158(num),
+		IsByzantium:                 c.IsByzantium(num),
+		IsConstantinople:            c.IsConstantinople(num),
+		IsPetersburg:                c.IsPetersburg(num),
+		IsIstanbul:                  c.IsIstanbul(num),
+		IsBerlin:                    c.IsBerlin(num),
+		IsIshikari:                  c.IsKCCIshikari(num),
+		IsCVE_2021_39137BlockPassed: c.CVE_2021_39137Block == nil || c.CVE_2021_39137Block.Cmp(num) < 0,
 	}
 }

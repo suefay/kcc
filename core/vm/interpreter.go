@@ -98,8 +98,14 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 	if cfg.JumpTable[STOP] == nil {
 		var jt JumpTable
 		switch {
-		case evm.chainRules.IsBerlin:
+		case evm.chainRules.IsCVE_2021_39137BlockPassed:
+			// a "fake" hardfork follows berlin hardfork
 			jt = berlinInstructionSet
+		case evm.chainRules.IsBerlin:
+			// see more in : core/vm/instructions_kcc_issue_9.go
+			// When processing blocks before CVE_2021_39137Block, We use the vulnerable implementation of calls
+			// to get the same merkle root as if using a kcc client of v1.0.3.
+			jt = berlinIntructionSetBeforeCVE_2021_39137Block
 		case evm.chainRules.IsIstanbul:
 			jt = istanbulInstructionSet
 		case evm.chainRules.IsConstantinople:
@@ -122,6 +128,7 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 				log.Error("EIP activation failed", "eip", eip, "error", err)
 			}
 		}
+
 		cfg.JumpTable = jt
 	}
 
@@ -284,7 +291,11 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		// if the operation clears the return data (e.g. it has returning data)
 		// set the last return to the result of the operation.
 		if operation.returns {
-			in.returnData = res
+			if in.evm.chainRules.IsCVE_2021_39137BlockPassed {
+				in.returnData = res
+			} else {
+				in.returnData = common.CopyBytes(res)
+			}
 		}
 
 		switch {

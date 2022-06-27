@@ -35,7 +35,7 @@ func (cc *chainContext) GetHeader(hash common.Hash, number uint64) *types.Header
 	return cc.chainReader.GetHeader(hash, number)
 }
 
-func getInteractiveABI() map[string]abi.ABI {
+func getInteractiveABIAndAddrs() (map[string]abi.ABI, map[string]common.Address) {
 	abiMap := make(map[string]abi.ABI, 0)
 	tmpABI, _ := abi.JSON(strings.NewReader(validatorsInteractiveABI))
 	abiMap[validatorsContractName] = tmpABI
@@ -44,7 +44,27 @@ func getInteractiveABI() map[string]abi.ABI {
 	tmpABI, _ = abi.JSON(strings.NewReader(proposalInteractiveABI))
 	abiMap[proposalContractName] = tmpABI
 
-	return abiMap
+	// Add our new abi encoders
+	abiMap[IshikariProposalContractName], _ = abi.JSON(strings.NewReader(IshikariProposalABI))
+	abiMap[IshikariPunishContractName], _ = abi.JSON(strings.NewReader(IshikariPunishABI))
+	abiMap[IshikariReservePoolContractName], _ = abi.JSON(strings.NewReader(IshikariReservePoolABI))
+	abiMap[IshikariValidatorsContractName], _ = abi.JSON(strings.NewReader(IshikariValidatorABI))
+
+	// Contract Addresses
+	addrs := make(map[string]common.Address, 0)
+
+	// v1 addresses
+	addrs[validatorsContractName] = validatorsContractAddr
+	addrs[proposalContractName] = proposalAddr
+	addrs[punishContractName] = punishContractAddr
+
+	// Ishikari hardfork addresses
+	addrs[IshikariValidatorsContractName] = IshikariValidatorsContractAddr
+	addrs[IshikariProposalContractName] = IshikariProposalAddr
+	addrs[IshikariPunishContractName] = IshikariPunishContractAddr
+	addrs[IshikariReservePoolContractName] = IshikariReservePoolAddr
+
+	return abiMap, addrs // TODO
 }
 
 // executeMsg executes transaction sent to system contracts.
@@ -59,7 +79,7 @@ func executeMsg(msg core.Message, state *state.StateDB, header *types.Header, ch
 	ret, _, err = vmenv.Call(vm.AccountRef(msg.From()), *msg.To(), msg.Data(), msg.Gas(), msg.Value())
 
 	if err != nil {
-		return []byte{}, err
+		return ret, err
 	}
 
 	return ret, nil

@@ -224,6 +224,13 @@ func gatherForks(config *params.ChainConfig) []uint64 {
 		if !strings.HasSuffix(field.Name, "Block") {
 			continue
 		}
+		// "CVE_2021_39137Block" is a "fake" hardfork to fix an issue in a past block(#2509228)
+		// It should not be included in the calculation of forkid.
+		// Fix #9: https://github.com/kcc-community/kcc/issues/9
+		// See more in: core/vm/instructions_kcc_issue_9.go
+		if strings.EqualFold(field.Name, "CVE_2021_39137Block") {
+			continue
+		}
 		if field.Type != reflect.TypeOf(new(big.Int)) {
 			continue
 		}

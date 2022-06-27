@@ -49,14 +49,15 @@ type operation struct {
 }
 
 var (
-	frontierInstructionSet         = newFrontierInstructionSet()
-	homesteadInstructionSet        = newHomesteadInstructionSet()
-	tangerineWhistleInstructionSet = newTangerineWhistleInstructionSet()
-	spuriousDragonInstructionSet   = newSpuriousDragonInstructionSet()
-	byzantiumInstructionSet        = newByzantiumInstructionSet()
-	constantinopleInstructionSet   = newConstantinopleInstructionSet()
-	istanbulInstructionSet         = newIstanbulInstructionSet()
-	berlinInstructionSet           = newBerlinInstructionSet()
+	frontierInstructionSet                       = newFrontierInstructionSet()
+	homesteadInstructionSet                      = newHomesteadInstructionSet()
+	tangerineWhistleInstructionSet               = newTangerineWhistleInstructionSet()
+	spuriousDragonInstructionSet                 = newSpuriousDragonInstructionSet()
+	byzantiumInstructionSet                      = newByzantiumInstructionSet()
+	constantinopleInstructionSet                 = newConstantinopleInstructionSet()
+	istanbulInstructionSet                       = newIstanbulInstructionSet()
+	berlinIntructionSetBeforeCVE_2021_39137Block = newBerlinInstructionSetWithVulnerableStaticCall()
+	berlinInstructionSet                         = newBerlinInstructionSet()
 )
 
 // JumpTable contains the EVM opcodes supported at a given fork.
@@ -68,6 +69,16 @@ func newBerlinInstructionSet() JumpTable {
 	instructionSet := newIstanbulInstructionSet()
 	enable2929(&instructionSet) // Access lists for trie accesses https://eips.ethereum.org/EIPS/eip-2929
 	return instructionSet
+}
+
+func newBerlinInstructionSetWithVulnerableStaticCall() JumpTable {
+	// see more in : core/vm/instructions_kcc_issue_9.go
+	// When processing blocks before CVE_2021_39137Block, We use the vulnerable implementation of calls
+	// to get the same merkle root as if using a kcc client of v1.0.3.
+
+	jt := newBerlinInstructionSet()
+	UseVulnerableCalls(&jt)
+	return jt
 }
 
 // newIstanbulInstructionSet returns the frontier, homestead, byzantium,
