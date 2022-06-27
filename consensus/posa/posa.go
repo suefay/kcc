@@ -573,6 +573,14 @@ func (c *POSA) Finalize(chain consensus.ChainHeaderReader, header *types.Header,
 		}
 	}
 
+	// In Ishikari Patch 002, The punishment parameters are determined
+	if c.chainConfig.IsIshikariPatch002HardforkBlock(header.Number) {
+		for _, p := range getIshikariPatch002() {
+			// apply each patch
+			p(state)
+		}
+	}
+
 	if header.Difficulty.Cmp(diffInTurn) != 0 {
 		if err := c.tryPunishValidator(chain, header, state); err != nil {
 			return err
@@ -632,6 +640,14 @@ func (c *POSA) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *ty
 	// In Ishikari Patch 001, We have fixed some minor bugs found on testnets.
 	if c.chainConfig.IsIshikariPatch001HardforkBlock(header.Number) {
 		for _, p := range getIshikariPatch001() {
+			// apply each patch
+			p(state)
+		}
+	}
+
+	// In Ishikari Patch 002, The punishment parameters are determined
+	if c.chainConfig.IsIshikariPatch002HardforkBlock(header.Number) {
+		for _, p := range getIshikariPatch002() {
 			// apply each patch
 			p(state)
 		}

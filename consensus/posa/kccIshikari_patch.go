@@ -13,6 +13,7 @@ import (
 // each patch is a state mutating function
 type patch func(state *state.StateDB)
 
+// Ishikari patch001: fix minor issues found on testnet
 func getIshikariPatch001() []patch {
 	return []patch{
 		patch001ValidatorsContract,
@@ -78,4 +79,27 @@ func verifyMd5Sum(data []byte, expectedSum []byte) {
 		panic(fmt.Sprintf("mismatched md5sum! expected(%v) != actual(%v)",
 			common.Bytes2Hex(sum), common.Bytes2Hex(expectedSum)))
 	}
+}
+
+// Ishikari Patch002: For each epoch, a validator can miss at most 2 blocks.
+func getIshikariPatch002() []patch {
+	return []patch{
+		patch002PunishContract,
+	}
+}
+
+func patch002PunishContract(state *state.StateDB) {
+
+	// Change Ishikari Punish Contract state slots
+	//
+	//   storage variable       slot        offset
+	// │ punishThreshold   │      57      │   0    │ t_uint256                                                                     │
+	// │ removeThreshold   │      58      │   0    │ t_uint256                                                                     │
+	// │ decreaseRate      │      59      │   0    │ t_uint256
+	//
+
+	// For each epoch, a validator can miss at most 2 blocks.
+	state.SetState(IshikariPunishContractAddr,
+		common.BigToHash(big.NewInt(59)),
+		common.BigToHash(big.NewInt(300)))
 }
